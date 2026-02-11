@@ -12,3 +12,5 @@ bash install.sh
 ```
 
 Install with root priviledge but run with the user indicated after the installation.
+
+Don't be silly, openclaw is not safe and this script even less - all keys are being stored as plain text!
