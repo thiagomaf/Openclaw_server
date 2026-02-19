@@ -4,7 +4,11 @@ Copy the content of `install.sh` somewhere, e.g.:
 ```bash
 nano install.sh
 ```
-Paste the content and save.
+Paste the content and save. Or:
+
+```bash
+wget https://raw.githubusercontent.com/thiagomaf/Openclaw_server/refs/heads/main/install.sh
+```
 
 Then run:
 ```bash
