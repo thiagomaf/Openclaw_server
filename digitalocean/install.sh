@@ -23,7 +23,7 @@ if [ "$EUID" -ne 0 ]; then error "Please run as root (use sudo)."; fi
 
 clear
 echo -e "${CYAN}"
-echo "  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄"
+echo "  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄"
 echo "  ██░▄▄▄░██░▄▄░██░▄▄▄██░▀██░██░▄▄▀██░████░▄▄▀██░███░██"
 echo "  ██░███░██░▀▀░██░▄▄▄██░█░█░██░█████░████░▀▀░██░█░█░██"
 echo "  ██░▀▀▀░██░█████░▀▀▀██░██▄░██░▀▀▄██░▀▀░█░██░██▄▀▄▀▄██"
@@ -31,7 +31,7 @@ echo "  ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
 echo -e "                 ${GREEN}MASTER INSTALLER v2.1 (2026) 'by' thiagomaf${NC}\n"
 
 # 1. System Dependencies
-log "1/7: Installing Docker and Node.js 22 (LTS)..."
+log "1/8: Installing Docker and Node.js 22 (LTS)..."
 apt-get update -y > /dev/null
 apt-get install -y curl git sudo docker.io jq ufw openssl > /dev/null
 curl -fsSL https://deb.nodesource.com/setup_22.x | bash - > /dev/null
@@ -39,7 +39,7 @@ apt-get install -y nodejs > /dev/null
 success "System dependencies ready."
 
 # 2. Install Caddy Web Server
-log "2/7: Installing Caddy reverse proxy..."
+log "2/8: Installing Caddy reverse proxy..."
 apt-get install -y debian-keyring debian-archive-keyring apt-transport-https > /dev/null 2>&1
 curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg 2>/dev/null
 curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | tee /etc/apt/sources.list.d/caddy-stable.list > /dev/null
@@ -48,7 +48,7 @@ apt-get install -y caddy > /dev/null
 success "Caddy installed."
 
 # 3. User Virtualization
-log "3/7: Creating 'openclaw' service user..."
+log "3/8: Creating 'openclaw' service user..."
 USER_NAME="openclaw"
 if ! id "$USER_NAME" &>/dev/null; then
     useradd -m -s /bin/bash "$USER_NAME"
@@ -58,12 +58,12 @@ loginctl enable-linger "$USER_NAME"
 success "User '$USER_NAME' created with Docker permissions."
 
 # 4. Global Package Installation
-log "4/7: Fetching latest OpenClaw from NPM..."
+log "4/8: Fetching latest OpenClaw from NPM..."
 npm install -g openclaw@latest > /dev/null
 success "OpenClaw binary installed globally."
 
 # 5. Homebrew Installation
-log "5/7: Installing Homebrew for user..."
+log "5/8: Installing Homebrew for user..."
 USER_ID=$(id -u "$USER_NAME")
 USER_HOME="/home/$USER_NAME"
 
@@ -77,13 +77,13 @@ else
     # Create Homebrew directory with correct ownership (requires root)
     mkdir -p /home/linuxbrew/.linuxbrew
     chown -R "$USER_NAME:$USER_NAME" /home/linuxbrew
-    
+
     # Install Homebrew as the openclaw user (disable set -e temporarily)
     set +e
     sudo -u "$USER_NAME" NONINTERACTIVE=1 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
     BREW_EXIT=$?
     set -e
-    
+
     if [ $BREW_EXIT -eq 0 ] && [ -x "/home/linuxbrew/.linuxbrew/bin/brew" ]; then
         success "Homebrew installed for user '$USER_NAME'."
     else
@@ -95,7 +95,7 @@ fi
 if [ -x "/home/linuxbrew/.linuxbrew/bin/brew" ]; then
     BREW_PATHS='eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv bash)"'
     grep -qF "brew shellenv" "$USER_HOME/.bashrc" || { echo ""; echo "$BREW_PATHS"; } >> "$USER_HOME/.bashrc"
-    
+
     # Pre-install gogcli (Google Suite CLI) - required by gog skill
     log "    Installing gogcli (Google Suite CLI)..."
     set +e
@@ -114,7 +114,7 @@ mkdir -p "$USER_HOME/.local/bin"
 chown "$USER_NAME:$USER_NAME" "$USER_HOME/.local/bin"
 grep -qF ".local/bin" "$USER_HOME/.bashrc" || echo 'export PATH=~/.local/bin:$PATH' >> "$USER_HOME/.bashrc"
 
-log "6/7: Initializing user-land configuration..."
+log "6/8: Initializing user-land configuration..."
 
 sudo -u "$USER_NAME" bash <<EOF
 export XDG_RUNTIME_DIR=/run/user/$USER_ID
@@ -168,7 +168,7 @@ systemctl --user enable openclaw-gateway.service || true
 EOF
 
 # 7. Caddy Configuration, Environment & Firewall
-log "7/7: Configuring Caddy, network and environment..."
+log "7/8: Configuring Caddy, network and environment..."
 
 # Environment variables
 grep -qxF "export XDG_RUNTIME_DIR=/run/user/$USER_ID" "$USER_HOME/.bashrc" || echo "export XDG_RUNTIME_DIR=/run/user/$USER_ID" >> "$USER_HOME/.bashrc"
@@ -208,6 +208,60 @@ if command -v ufw > /dev/null; then
 fi
 
 success "Caddy, network and environment configured."
+
+# 8. Setup MOTD
+log "8/8: Configuring Message of the Day (MOTD)..."
+cat <<'MOTD_SCRIPT' > /etc/update-motd.d/99-openclaw
+#!/bin/bash
+
+CYAN='\033[0;36m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m'
+
+USER_NAME="openclaw"
+USER_HOME="/home/$USER_NAME"
+
+# Get Token
+if [ -f "$USER_HOME/.openclaw/openclaw.json" ]; then
+    TOKEN=$(jq -r '.gateway.auth.token' "$USER_HOME/.openclaw/openclaw.json" 2>/dev/null)
+else
+    TOKEN="<not-configured>"
+fi
+
+# Get IP
+IP_ADDR=$(hostname -I | awk '{print $1}')
+[ -z "$IP_ADDR" ] && IP_ADDR="<ip-address>"
+
+echo -e "${CYAN}"
+echo "  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄"
+echo "  ██░▄▄▄░██░▄▄░██░▄▄▄██░▀██░██░▄▄▀██░████░▄▄▀██░███░██"
+echo "  ██░███░██░▀▀░██░▄▄▄██░█░█░██░█████░████░▀▀░██░█░█░██"
+echo "  ██░▀▀▀░██░█████░▀▀▀██░██▄░██░▀▀▄██░▀▀░█░██░██▄▀▄▀▄██"
+echo "  ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀"
+echo -e "                 ${GREEN}OPENCLAW SERVER${NC}\n"
+
+echo -e "${YELLOW}System Status:${NC}"
+echo -e "  User:             ${USER_NAME}"
+echo -e "  Service:          openclaw-gateway (systemctl --user status openclaw-gateway)"
+echo -e ""
+echo -e "${YELLOW}Access Info:${NC}"
+echo -e "  Token:            ${CYAN}${TOKEN}${NC}"
+echo -e "  Web UI (HTTP):    ${CYAN}http://${IP_ADDR}/?token=${TOKEN}${NC}"
+echo -e "  Web UI (HTTPS):   ${CYAN}https://${IP_ADDR}/?token=${TOKEN}${NC}"
+echo -e ""
+echo -e "${YELLOW}Commands:${NC}"
+echo -e "  Switch User:      ${GREEN}su - ${USER_NAME}${NC}"
+echo -e "  Manage Keys:      ${GREEN}openclaw onboard${NC}"
+echo -e "  Start Service:    ${GREEN}systemctl --user start openclaw-gateway${NC}"
+echo -e "  TUI Chat:         ${GREEN}openclaw tui${NC}"
+echo -e "  System Check:     ${GREEN}openclaw doctor${NC}"
+echo -e "  Configuration:    ${GREEN}openclaw config${NC}"
+echo -e ""
+MOTD_SCRIPT
+
+chmod +x /etc/update-motd.d/99-openclaw
+success "MOTD configured."
 
 # Final Summary
 # Read token from config file directly as fallback
