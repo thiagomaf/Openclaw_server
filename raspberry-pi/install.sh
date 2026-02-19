@@ -1,8 +1,13 @@
 #!/bin/bash
 
-# 🦞 OpenClaw 2.1 "Master" Installer (2026 Edition)
-# Purpose: Converts a fresh Ubuntu Droplet into a secure, non-root OpenClaw 2.1 instance.
-# Targeted for: Fresh Ubuntu 24.04 or 22.04 (Standard Image)
+# 🦞 OpenClaw 2.1 "Master" Installer — Raspberry Pi 5 Edition (2026)
+# Purpose: Converts a fresh Ubuntu Server 24.04 (ARM64) on Raspberry Pi 5
+#          into a secure, non-root OpenClaw 2.1 instance.
+# Targeted for: Ubuntu Server 24.04 LTS (64-bit) on Raspberry Pi 5
+#
+# Note: This script intentionally skips Homebrew.
+#       Homebrew has no official ARM64 Linux support and will fail on RPi.
+#       If you need gogcli, install it manually via a Go binary release.
 
 set -e
 
@@ -28,20 +33,20 @@ echo "  ██░▄▄▄░██░▄▄░██░▄▄▄██░▀█
 echo "  ██░███░██░▀▀░██░▄▄▄██░█░█░██░█████░████░▀▀░██░█░█░██"
 echo "  ██░▀▀▀░██░█████░▀▀▀██░██▄░██░▀▀▄██░▀▀░█░██░██▄▀▄▀▄██"
 echo "  ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀"
-echo -e "                 ${GREEN}MASTER INSTALLER v2.1 (2026) 'by' thiagomaf${NC}\n"
+echo -e "           ${GREEN}RASPBERRY PI 5 INSTALLER v2.1 (2026) 'by' thiagomaf${NC}\n"
 
 # --- Options ---
 echo -e "${YELLOW}Caddy${NC} is a reverse proxy that adds HTTP/HTTPS on ports 80/443."
-echo -e "Strongly recommended for public-facing DigitalOcean droplets."
+echo -e "Useful for public servers. For LAN-only setups the gateway runs directly on port 18789."
 echo -e ""
 if [ -t 0 ]; then
-    read -r -p "Install Caddy reverse proxy? [Y/n]: " _caddy_ans
+    read -r -p "Install Caddy reverse proxy? [y/N]: " _caddy_ans
 else
     _caddy_ans=""
 fi
 case "${_caddy_ans,,}" in
-    n|no) INSTALL_CADDY=false ;;
-    *)    INSTALL_CADDY=true  ;;
+    y|yes) INSTALL_CADDY=true  ;;
+    *)     INSTALL_CADDY=false ;;
 esac
 
 if [ "$INSTALL_CADDY" = true ]; then
@@ -51,7 +56,7 @@ else
 fi
 
 # 1. System Dependencies
-log "1/8: Installing Docker and Node.js 22 (LTS)..."
+log "1/7: Installing Docker and Node.js 22 (LTS)..."
 apt-get update -y > /dev/null
 apt-get install -y curl git sudo docker.io jq ufw openssl > /dev/null
 curl -fsSL https://deb.nodesource.com/setup_22.x | bash - > /dev/null
@@ -60,7 +65,7 @@ success "System dependencies ready."
 
 # 2. Install Caddy Web Server (optional)
 if [ "$INSTALL_CADDY" = true ]; then
-    log "2/8: Installing Caddy reverse proxy..."
+    log "2/7: Installing Caddy reverse proxy..."
     apt-get install -y debian-keyring debian-archive-keyring apt-transport-https > /dev/null 2>&1
     curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg 2>/dev/null || true
     curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | tee /etc/apt/sources.list.d/caddy-stable.list > /dev/null
@@ -68,11 +73,11 @@ if [ "$INSTALL_CADDY" = true ]; then
     apt-get install -y caddy > /dev/null
     success "Caddy installed."
 else
-    log "2/8: Caddy installation skipped."
+    log "2/7: Caddy installation skipped."
 fi
 
 # 3. User Virtualization
-log "3/8: Creating 'openclaw' service user..."
+log "3/7: Creating 'openclaw' service user..."
 USER_NAME="openclaw"
 if ! id "$USER_NAME" &>/dev/null; then
     useradd -m -s /bin/bash "$USER_NAME"
@@ -82,63 +87,20 @@ loginctl enable-linger "$USER_NAME"
 success "User '$USER_NAME' created with Docker permissions."
 
 # 4. Global Package Installation
-log "4/8: Fetching latest OpenClaw from NPM..."
+log "4/7: Fetching latest OpenClaw from NPM..."
 npm install -g openclaw@latest > /dev/null
 success "OpenClaw binary installed globally."
 
-# 5. Homebrew Installation
-log "5/8: Installing Homebrew for user..."
+# 5. User-Land Configuration
 USER_ID=$(id -u "$USER_NAME")
 USER_HOME="/home/$USER_NAME"
-
-# Install build dependencies for Homebrew
-apt-get install -y build-essential procps file git > /dev/null 2>&1
-
-# Check if Homebrew is already installed
-if [ -x "/home/linuxbrew/.linuxbrew/bin/brew" ]; then
-    success "Homebrew already installed, skipping."
-else
-    # Create Homebrew directory with correct ownership (requires root)
-    mkdir -p /home/linuxbrew/.linuxbrew
-    chown -R "$USER_NAME:$USER_NAME" /home/linuxbrew
-
-    # Install Homebrew as the openclaw user (disable set -e temporarily)
-    set +e
-    sudo -u "$USER_NAME" NONINTERACTIVE=1 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-    BREW_EXIT=$?
-    set -e
-
-    if [ $BREW_EXIT -eq 0 ] && [ -x "/home/linuxbrew/.linuxbrew/bin/brew" ]; then
-        success "Homebrew installed for user '$USER_NAME'."
-    else
-        warn "Homebrew installation had issues (exit code: $BREW_EXIT), continuing anyway..."
-    fi
-fi
-
-# Add Homebrew to user's PATH
-if [ -x "/home/linuxbrew/.linuxbrew/bin/brew" ]; then
-    BREW_PATHS='eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv bash)"'
-    grep -qF "brew shellenv" "$USER_HOME/.bashrc" || { echo ""; echo "$BREW_PATHS"; } >> "$USER_HOME/.bashrc"
-
-    # Pre-install gogcli (Google Suite CLI) - required by gog skill
-    log "    Installing gogcli (Google Suite CLI)..."
-    set +e
-    sudo -u "$USER_NAME" /home/linuxbrew/.linuxbrew/bin/brew install steipete/tap/gogcli > /dev/null 2>&1
-    GOG_EXIT=$?
-    set -e
-    if [ $GOG_EXIT -eq 0 ]; then
-        success "    gogcli installed."
-    else
-        warn "    gogcli installation had issues, can be installed later with: brew install steipete/tap/gogcli"
-    fi
-fi
 
 # Add ~/.local/bin to PATH (for manual binary installs)
 mkdir -p "$USER_HOME/.local/bin"
 chown "$USER_NAME:$USER_NAME" "$USER_HOME/.local/bin"
 grep -qF ".local/bin" "$USER_HOME/.bashrc" || echo 'export PATH=~/.local/bin:$PATH' >> "$USER_HOME/.bashrc"
 
-log "6/8: Initializing user-land configuration..."
+log "5/7: Initializing user-land configuration..."
 
 sudo -u "$USER_NAME" bash <<EOF
 export XDG_RUNTIME_DIR=/run/user/$USER_ID
@@ -211,7 +173,7 @@ JSON
 echo "Generating systemd service file..."
 OPENCLAW_GATEWAY_TOKEN=\$RAND_TOKEN openclaw gateway install --force > /dev/null 2>&1 || true
 
-# Link it to the user systemd directory
+# Link service file to the user systemd directory
 if [ -f ~/.openclaw/openclaw-gateway.service ]; then
     ln -sf ~/.openclaw/openclaw-gateway.service ~/.config/systemd/user/openclaw-gateway.service
 fi
@@ -221,8 +183,8 @@ systemctl --user daemon-reload
 systemctl --user enable openclaw-gateway.service || true
 EOF
 
-# 7. Environment, Caddy (optional) & Firewall
-log "7/8: Configuring environment and network..."
+# 6. Environment, Caddy (optional) & Firewall
+log "6/7: Configuring environment and network..."
 
 # Non-secret environment variables
 grep -qxF "export XDG_RUNTIME_DIR=/run/user/$USER_ID" "$USER_HOME/.bashrc" || echo "export XDG_RUNTIME_DIR=/run/user/$USER_ID" >> "$USER_HOME/.bashrc"
@@ -269,8 +231,8 @@ fi
 
 success "Environment and network configured."
 
-# 8. Setup MOTD
-log "8/8: Configuring Message of the Day (MOTD)..."
+# 7. Setup MOTD
+log "7/7: Configuring Message of the Day (MOTD)..."
 cat <<'MOTD_SCRIPT' > /etc/update-motd.d/99-openclaw
 #!/bin/bash
 
@@ -280,16 +242,15 @@ YELLOW='\033[1;33m'
 NC='\033[0m'
 
 USER_NAME="openclaw"
-USER_HOME="/home/$USER_NAME"
+ENV_FILE="/home/${USER_NAME}/.config/environment.d/openclaw.env"
 
 # Read token from env file (not from JSON)
-ENV_FILE="/home/${USER_NAME}/.config/environment.d/openclaw.env"
 if [ -f "$ENV_FILE" ]; then
     TOKEN=$(grep -E '^OPENCLAW_GATEWAY_TOKEN=' "$ENV_FILE" | cut -d'=' -f2)
 fi
 [ -z "$TOKEN" ] && TOKEN="<not-configured>"
 
-# Get IP
+# Get local network IP
 IP_ADDR=$(hostname -I | awk '{print $1}')
 [ -z "$IP_ADDR" ] && IP_ADDR="<ip-address>"
 
@@ -299,7 +260,7 @@ echo "  ██░▄▄▄░██░▄▄░██░▄▄▄██░▀█
 echo "  ██░███░██░▀▀░██░▄▄▄██░█░█░██░█████░████░▀▀░██░█░█░██"
 echo "  ██░▀▀▀░██░█████░▀▀▀██░██▄░██░▀▀▄██░▀▀░█░██░██▄▀▄▀▄██"
 echo "  ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀"
-echo -e "                 ${GREEN}OPENCLAW SERVER${NC}\n"
+echo -e "                 ${GREEN}OPENCLAW SERVER — Raspberry Pi 5${NC}\n"
 
 echo -e "${YELLOW}System Status:${NC}"
 echo -e "  User:             ${USER_NAME}"
@@ -320,7 +281,6 @@ echo -e "  Add AI keys:      ${GREEN}nano ~/.config/environment.d/openclaw.env${
 echo -e "  Start Service:    ${GREEN}systemctl --user start openclaw-gateway${NC}"
 echo -e "  TUI Chat:         ${GREEN}openclaw tui${NC}"
 echo -e "  System Check:     ${GREEN}openclaw doctor${NC}"
-echo -e "  Configuration:    ${GREEN}openclaw config${NC}"
 echo -e ""
 MOTD_SCRIPT
 
@@ -328,13 +288,13 @@ chmod +x /etc/update-motd.d/99-openclaw
 success "MOTD configured."
 
 # Final Summary
-# Read token from the env file (never from JSON)
 ENV_FILE="$USER_HOME/.config/environment.d/openclaw.env"
 TOKEN=$(grep -E '^OPENCLAW_GATEWAY_TOKEN=' "$ENV_FILE" 2>/dev/null | cut -d'=' -f2 || echo "check ~/.config/environment.d/openclaw.env")
-IP_ADDR=$(curl -s --max-time 5 ifconfig.me || hostname -I | awk '{print $1}')
+IP_ADDR=$(hostname -I | awk '{print $1}')
+[ -z "$IP_ADDR" ] && IP_ADDR="<raspberry-pi-ip>"
 
 echo -e "\n${GREEN}-------------------------------------------------------${NC}"
-echo -e "${YELLOW}           OPENCLAW 2.1 SETUP COMPLETE!${NC}"
+echo -e "${YELLOW}        OPENCLAW 2.1 SETUP COMPLETE! (Raspberry Pi 5)${NC}"
 echo -e "-------------------------------------------------------"
 echo -e "Access Token:     ${CYAN}${TOKEN}${NC}"
 if [ "$INSTALL_CADDY" = true ]; then
@@ -353,11 +313,13 @@ echo -e " 2. Add AI Keys:    ${YELLOW}nano ~/.config/environment.d/openclaw.env$
 echo -e "                    (then: systemctl --user restart openclaw-gateway)"
 echo -e " 3. Start the Bot:  ${YELLOW}systemctl --user start openclaw-gateway${NC}"
 echo -e "-------------------------------------------------------"
-echo -e "Homebrew is available: ${CYAN}brew install <package>${NC}"
 echo -e "Then run ${CYAN}openclaw tui${NC} to start chatting!"
 echo -e ""
 if [ "$INSTALL_CADDY" = true ]; then
     echo -e "${YELLOW}Note:${NC} HTTPS uses a self-signed certificate. Accept the"
     echo -e "browser warning or add a domain to /etc/caddy/Caddyfile"
     echo -e "for automatic Let's Encrypt certificates."
+    echo -e ""
 fi
+echo -e "${YELLOW}Note:${NC} Homebrew is NOT installed (unsupported on ARM64)."
+echo -e "To install gogcli manually: https://github.com/steipete/gogcli"
