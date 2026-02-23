@@ -282,10 +282,15 @@ NC='\033[0m'
 USER_NAME="openclaw"
 USER_HOME="/home/$USER_NAME"
 
-# Read token from env file (not from JSON)
-ENV_FILE="/home/${USER_NAME}/.config/environment.d/openclaw.env"
-if [ -f "$ENV_FILE" ]; then
-    TOKEN=$(grep -E '^OPENCLAW_GATEWAY_TOKEN=' "$ENV_FILE" | cut -d'=' -f2)
+# Read gateway token: prefer openclaw.json (written by onboard/gateway install), fall back to env file
+JSON_FILE="/home/${USER_NAME}/.openclaw/openclaw.json"
+TOKEN=""
+if [ -f "$JSON_FILE" ] && command -v jq > /dev/null; then
+    TOKEN=$(jq -r '.gateway.auth.token // empty' "$JSON_FILE" 2>/dev/null)
+fi
+if [ -z "$TOKEN" ]; then
+    ENV_FILE="/home/${USER_NAME}/.config/environment.d/openclaw.env"
+    [ -f "$ENV_FILE" ] && TOKEN=$(grep -E '^OPENCLAW_GATEWAY_TOKEN=' "$ENV_FILE" | cut -d'=' -f2)
 fi
 [ -z "$TOKEN" ] && TOKEN="<not-configured>"
 
@@ -328,9 +333,15 @@ chmod +x /etc/update-motd.d/99-openclaw
 success "MOTD configured."
 
 # Final Summary
-# Read token from the env file (never from JSON)
-ENV_FILE="$USER_HOME/.config/environment.d/openclaw.env"
-TOKEN=$(grep -E '^OPENCLAW_GATEWAY_TOKEN=' "$ENV_FILE" 2>/dev/null | cut -d'=' -f2 || echo "check ~/.config/environment.d/openclaw.env")
+# Read gateway token: prefer openclaw.json (written by gateway install), fall back to env file
+TOKEN=""
+if [ -f "$USER_HOME/.openclaw/openclaw.json" ] && command -v jq > /dev/null; then
+    TOKEN=$(jq -r '.gateway.auth.token // empty' "$USER_HOME/.openclaw/openclaw.json" 2>/dev/null)
+fi
+if [ -z "$TOKEN" ]; then
+    TOKEN=$(grep -E '^OPENCLAW_GATEWAY_TOKEN=' "$USER_HOME/.config/environment.d/openclaw.env" 2>/dev/null | cut -d'=' -f2 || true)
+fi
+[ -z "$TOKEN" ] && TOKEN="(will be set after 'openclaw onboard')"
 IP_ADDR=$(curl -s --max-time 5 ifconfig.me || hostname -I | awk '{print $1}')
 
 echo -e "\n${GREEN}-------------------------------------------------------${NC}"
@@ -344,7 +355,8 @@ else
     echo -e "Web Dashboard:    ${CYAN}http://${IP_ADDR}:18789/?token=${TOKEN}${NC}"
 fi
 echo -e "-------------------------------------------------------"
-echo -e "Secrets are stored in: ${YELLOW}~openclaw/.config/environment.d/openclaw.env${NC}"
+echo -e "AI provider keys in:  ${YELLOW}~openclaw/.config/environment.d/openclaw.env${NC}"
+echo -e "Gateway token in:     ${YELLOW}~openclaw/.openclaw/openclaw.json${NC} (.gateway.auth.token)"
 echo -e "-------------------------------------------------------"
 echo -e "Finalize your setup in 3 quick steps:"
 echo -e ""
